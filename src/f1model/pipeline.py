@@ -15,6 +15,7 @@ from f1model.backtest import backtest, summarise
 from f1model.data.clean import build_entries
 from f1model.data.fetch import DATA_DIR, download, load_table
 from f1model.metrics.dominance import dominance_table
+from f1model.metrics.explain import load_regulations, season_factors, thresholds
 from f1model.models.rating import fit_ratings, peak_window
 from f1model.models.track import (
     PRE_FEATURES, TRACK_TYPES, TrackModel, build_circuit_types, build_features, upcoming_entries,
@@ -22,6 +23,7 @@ from f1model.models.track import (
 
 OUT_DIR = DATA_DIR / "out"
 CIRCUITS_CSV = DATA_DIR / "circuits.csv"
+REGULATIONS_CSV = DATA_DIR / "regulations.csv"
 BACKTEST_YEARS = list(range(2014, 2027))
 
 
@@ -129,6 +131,16 @@ def run(refresh: bool = False, with_backtest: bool = True) -> None:
     peaks["driver"] = peaks["driver_id"].map(names)
     seasons.to_parquet(OUT_DIR / "seasons.parquet", index=False)
     peaks.to_parquet(OUT_DIR / "peaks.parquet", index=False)
+
+    # 1b. Why: car / driver / competition / reliability / rules per driver-season
+    factors = season_factors(entries, seasons, ratings["cars"], load_regulations(REGULATIONS_CSV))
+    factors["driver"] = factors["driver_id"].map(names)
+    factors["rival_name"] = factors["rival_id"].map(names)
+    factors["teammate_name"] = factors["teammate_id"].map(names)
+    factors["team_name"] = factors["main_team"].map(teams)
+    factors.to_parquet(OUT_DIR / "explain.parquet", index=False)
+    explain_thresholds = thresholds(factors)
+
     print("\nTop 10 peaks:")
     print(peaks.head(10)[["driver", "peak_start", "peak_end", "peak_score", "peak_rating", "peak_wins"]].round(3).to_string(index=False))
 
@@ -150,7 +162,10 @@ def run(refresh: bool = False, with_backtest: bool = True) -> None:
         print(first.head(5)[["pred_rank", "driver", "team", "p_win", "p_podium"]].round(3).to_string(index=False))
 
     # 3. Backtest
-    meta = {"last_race": str(entries["date"].max()), "starts": len(entries), "backtest_years": BACKTEST_YEARS}
+    meta = {
+        "last_race": str(entries["date"].max()), "starts": len(entries), "backtest_years": BACKTEST_YEARS,
+        "explain_thresholds": explain_thresholds,
+    }
     if with_backtest:
         per_race = backtest(feats, BACKTEST_YEARS)
         per_race.to_parquet(OUT_DIR / "backtest.parquet", index=False)

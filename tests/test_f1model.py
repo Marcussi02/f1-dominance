@@ -153,3 +153,67 @@ def test_circuit_types():
     quali = pd.DataFrame({"raceId": [1, 2, 3, 4], "positionNumber": [1] * 4, "timeMillis": [90_000] * 4})
     t = build_circuit_types(races, quali, circuits).set_index("circuit_id")["track_type"]
     assert t.to_dict() == {"fast": "high-speed", "mid": "mixed", "s": "street", "slow": "technical"}
+
+
+# ------------------------------------------------------------------- explain
+from f1model.metrics.explain import describe, driver_share, season_factors, summarise_window  # noqa: E402
+
+THR = {"car_big": 0.05, "rival_easy": 0.04, "rival_tough": -0.01}
+
+
+def test_driver_share_ignores_below_average_parts():
+    out = driver_share(pd.Series([0.2, 0.1, -0.1, -0.1]), pd.Series([0.2, -0.3, 0.3, -0.2]))
+    assert out.iloc[0] == 0.5 and out.iloc[1] == 1.0 and out.iloc[2] == 0.0 and np.isnan(out.iloc[3])
+
+
+def _explain_inputs():
+    """2 seasons, 3 cars: A (best), B, C. Driver a in A, rival b in B, c and d share C."""
+    rows = []
+    for year in (2013, 2014):
+        for race in range(6):
+            for d, team in (("a", "A"), ("b", "B"), ("c", "C"), ("d", "C")):
+                fail = d == "b" and race < 3  # b's car breaks down half the time
+                rows.append({"race_id": year * 10 + race, "year": year, "driver_id": d, "team_id": team,
+                             "team_season": f"{team}_{year}", "engine_id": "eng", "tyre_id": "tyr",
+                             "status": "car" if fail else "finished"})
+    entries = pd.DataFrame(rows)
+    car = {"A": 0.30, "B": 0.10, "C": 0.0}
+    cars = pd.DataFrame([{"team_season": f"{t}_{y}", "car": v + (0.1 if (t == "A" and y == 2014) else 0)}
+                         for y in (2013, 2014) for t, v in car.items()])
+    seasons = pd.DataFrame([
+        {"driver_id": d, "year": y, "starts": 6, "wins": 6 if d == "a" else 0, "rating": r, "car": None,
+         "h2h": np.nan, "champ_rank": rank}
+        for y in (2013, 2014) for d, r, rank in (("a", 0.2, 1), ("b", 0.15, 2), ("c", 0.0, 3), ("d", -0.1, 4))
+    ])
+    team = {"a": "A", "b": "B", "c": "C", "d": "C"}
+    seasons["car"] = [cars.set_index("team_season")["car"][f"{team[d]}_{y}"] for d, y in zip(seasons["driver_id"], seasons["year"])]
+    regs = pd.DataFrame({"year": [2014], "kind": ["rules"], "change": ["Hybrid engines"]})
+    return entries, seasons, cars, regs
+
+
+def test_season_factors_car_rival_reliability_rules():
+    f = season_factors(*_explain_inputs()).set_index(["driver_id", "year"])
+    a = f.loc[("a", 2014)]
+    assert a["car_rank"] == 1 and a["car_gap"] == pytest.approx(0.30)
+    assert a["rival_id"] == "b" and not a["rival_same_car"]
+    assert a["own_fail"] == 0 and a["rivals_fail"] > 0
+    assert a["car_jump"] == pytest.approx(0.10)
+    assert "2014: Hybrid engines" in a["rule_changes"]
+    assert f.loc[("c", 2013), "teammate_id"] == "d" and f.loc[("c", 2013), "car_rank"] == 3
+    assert f.loc[("a", 2013), "rule_changes"] == ""
+
+
+def test_describe_labels():
+    f = season_factors(*_explain_inputs())
+    f["rival_name"], f["teammate_name"], f["team_name"] = f["rival_id"], f["teammate_id"], f["main_team"]
+    res = describe(summarise_window(f.loc[(f["driver_id"] == "a") & (f["year"] == 2014)]), THR)
+    cards = res["cards"]
+    assert cards["Car"][0] == "Best car by a big margin"
+    assert cards["Driver"][0] == "Best driver on the grid"
+    assert cards["Competition"][0] == "Little competition"
+    assert cards["Reliability"][0] == "Rivals broke down more"
+    assert cards["New rules"][0] == "New rules — team nailed them"
+    assert res["verdict"].startswith("Mostly the car")
+
+    window = describe(summarise_window(f.loc[f["driver_id"] == "a"]), THR)
+    assert window["cards"]["Car"][0] == "Best car by a big margin"  # best car in both seasons

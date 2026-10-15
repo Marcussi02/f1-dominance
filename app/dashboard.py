@@ -19,8 +19,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from f1model import pipeline  # noqa: E402
 from f1model.data.fetch import DATA_DIR  # noqa: E402
+from f1model.metrics.explain import describe, summarise_window  # noqa: E402
 
 OUT = DATA_DIR / "out"
+REQUIRED = ("seasons", "peaks", "predictions", "track_strengths", "explain")
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#e34948"
 GRID, MUTED = "rgba(137,135,129,0.25)", "#898781"
 COMPONENTS = {
@@ -35,9 +37,7 @@ st.set_page_config(page_title="F1 Peak Dominance", page_icon="🏁", layout="wid
 
 @st.cache_data
 def load():
-    if not (OUT / "peaks.parquet").exists():
-        return None
-    data = {n: pd.read_parquet(OUT / f"{n}.parquet") for n in ("seasons", "peaks", "predictions", "track_strengths")}
+    data = {n: pd.read_parquet(OUT / f"{n}.parquet") for n in REQUIRED}
     bt = OUT / "backtest.parquet"
     data["backtest"] = pd.read_parquet(bt) if bt.exists() else None
     data["meta"] = json.loads((OUT / "meta.json").read_text())
@@ -61,8 +61,8 @@ def pct(x: float) -> str:
     return "–" if pd.isna(x) else f"{x:.0%}"
 
 
-if not (OUT / "peaks.parquet").exists():
-    # Fresh install or new server: download F1DB and build everything once.
+if not all((OUT / f"{n}.parquet").exists() for n in REQUIRED):
+    # Fresh install, new server, or an app update that added outputs: build everything once.
     with st.spinner("First start: downloading F1 data and building the model (about 30 seconds)..."):
         pipeline.run()
     load.clear()
@@ -71,7 +71,15 @@ data = load()
 
 seasons, peaks, preds, strengths = data["seasons"], data["peaks"], data["predictions"], data["track_strengths"]
 st.sidebar.title("🏁 F1 Peak Dominance")
-page = st.sidebar.radio("Page", ["All-time peak ranking", "Driver career", "Head-to-head", "Track predictor"])
+explain = data["explain"]
+thr = data["meta"]["explain_thresholds"]
+PAGES = ["All-time peak ranking", "Driver career", "Why so dominant?", "Head-to-head", "Track predictor"]
+page = st.sidebar.radio("Page", PAGES, key="page")
+
+
+def why(driver_id: str, start: int, end: int) -> dict:
+    rows = explain.loc[(explain["driver_id"] == driver_id) & explain["year"].between(start, end)]
+    return describe(summarise_window(rows), thr)
 st.sidebar.caption(f"Data: F1DB, 1950 – {data['meta']['last_race']}  \n{data['meta']['starts']:,} race starts")
 if st.sidebar.button("Update to latest results"):
     with st.spinner("Downloading latest F1 results and rebuilding..."):
@@ -147,6 +155,9 @@ elif page == "Driver career":
     m[4].metric("Teammate H2H (career)",
                 pct((d["h2h_quali_w"].sum() + d["h2h_race_w"].sum()) / max(1, d["h2h_quali_n"].sum() + d["h2h_race_n"].sum())))
 
+    st.info(f"**Why so dominant ({pk.peak_start}–{pk.peak_end})?** {why(pk.driver_id, pk.peak_start, pk.peak_end)['verdict']}. "
+            "See the **Why so dominant?** page for the full breakdown.")
+
     st.subheader("Dominance Index by season")
     fig = go.Figure()
     fig.add_vrect(x0=pk.peak_start - 0.5, x1=pk.peak_end + 0.5, fillcolor=BLUE, opacity=0.08, line_width=0,
@@ -186,6 +197,60 @@ elif page == "Driver career":
             "dominance": st.column_config.NumberColumn("Index", format="%.2f"),
         },
     )
+
+# ------------------------------------------------------------------- why
+elif page == "Why so dominant?":
+    st.header("Why so dominant?")
+    st.caption("Breaks a driver's results into car, driver, competition, reliability and rule changes.")
+    names = peaks.sort_values("peak_score", ascending=False)["driver"].tolist()
+    c1, c2 = st.columns([2, 1])
+    driver = c1.selectbox("Driver", names, index=0)
+    pk = peaks.loc[peaks["driver"] == driver].iloc[0]
+    years = sorted(explain.loc[explain["driver_id"] == pk.driver_id, "year"].unique(), reverse=True)
+    peak_label = f"Peak ({pk.peak_start}–{pk.peak_end})"
+    period = c2.selectbox("Period", [peak_label] + [str(y) for y in years])
+    start, end = (pk.peak_start, pk.peak_end) if period == peak_label else (int(period), int(period))
+
+    rows = explain.loc[(explain["driver_id"] == pk.driver_id) & explain["year"].between(start, end)]
+    f = summarise_window(rows)
+    res = describe(f, thr)
+    st.subheader(res["verdict"])
+
+    share = res["driver_share"]
+    if pd.notna(share):
+        fig = go.Figure()
+        for name, val, color in (("Driver", share, BLUE), ("Car", 1 - share, ORANGE)):
+            fig.add_trace(go.Bar(
+                y=["Advantage"], x=[val], name=name, orientation="h", marker=dict(color=color),
+                text=f"{name} {val:.0%}", textposition="inside", insidetextanchor="middle",
+                hovertemplate=f"{name}: {val:.0%} of the advantage<extra></extra>",
+            ))
+        fig.update_layout(barmode="stack", showlegend=False)
+        fig.update_xaxes(range=[0, 1], tickformat=".0%", showgrid=False)
+        fig.update_yaxes(visible=False)
+        st.plotly_chart(style(fig, 120), use_container_width=True)
+        st.caption(f"Driver edge {f['driver_edge']:+.2f} and car edge {f['car_edge']:+.2f} over the average "
+                   "driver and car that season (model estimate).")
+    else:
+        st.caption("Neither the driver nor the car was above average here, so there is no split to show.")
+
+    cols = st.columns(5)
+    for col, (factor, (label, detail)) in zip(cols, res["cards"].items()):
+        with col.container(border=True):
+            st.caption(factor.upper())
+            st.markdown(f"**{label}**")
+            st.caption(detail)
+
+    with st.expander("Era context", expanded=True):
+        e1, e2, e3 = st.columns(3)
+        e1.markdown(f"**Team**  \n{f['team_name'] or '–'}")
+        e2.markdown(f"**Engine**  \n{f['engine_id'].replace('-', ' ').title() or '–'}")
+        e3.markdown(f"**Tyres**  \n{f['tyre_id'].replace('-', ' ').title() or '–'}")
+        st.markdown(f"**Major rule changes around this time:** {f['rule_changes'] or 'none in the list'}")
+
+    st.caption("Limits: the driver/car split is a model estimate. When a driver crushes a weak teammate, the model "
+               "credits the driver more and the car less, so the teammate's championship finish is shown as a "
+               "model-free clue. 'New rules' uses a short hand-written list (data/regulations.csv).")
 
 # ------------------------------------------------------------- head-to-head
 elif page == "Head-to-head":

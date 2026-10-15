@@ -101,6 +101,9 @@ def build_entries(results: pd.DataFrame, races: pd.DataFrame, entrants: pd.DataF
     else:
         df["entrantId"] = np.nan
     df["entrantId"] = df["entrantId"].fillna(df["constructorId"])
+    for col in ("engineManufacturerId", "tyreManufacturerId"):
+        if col not in df:
+            df[col] = np.nan
 
     is_starter = df["positionText"].astype(str).str.isdigit() | df["positionText"].isin(STARTER_CODES)
     keep = is_starter & (df["grandPrixId"] != "indianapolis") & ~df["sharedCar"].fillna(False).astype(bool)
@@ -135,6 +138,8 @@ def build_entries(results: pd.DataFrame, races: pd.DataFrame, entrants: pd.DataF
             "driverId": "driver_id",
             "constructorId": "team_id",
             "entrantId": "entrant_id",
+            "engineManufacturerId": "engine_id",
+            "tyreManufacturerId": "tyre_id",
             "circuitId": "circuit_id",
             "circuitType": "f1db_circuit_type",
             "positionNumber": "position",
@@ -144,7 +149,8 @@ def build_entries(results: pd.DataFrame, races: pd.DataFrame, entrants: pd.DataF
     )
     cols = [
         "race_id", "year", "round", "date", "circuit_id", "f1db_circuit_type", "courseLength",
-        "driver_id", "team_id", "entrant_id", "team_season", "driver_season", "position", "grid", "pole",
+        "driver_id", "team_id", "entrant_id", "engine_id", "tyre_id", "team_season", "driver_season",
+        "position", "grid", "pole",
         "status", "classified", "points_modern", "n_starters", "finish_order", "race_pct",
         "finish_pct", "quali_rank", "quali_pct", "laps",
     ]

@@ -49,6 +49,15 @@ You get a link like `https://<name>.streamlit.app`. Every push to `main` redeplo
 
 **Peak:** the best 3 consecutive seasons with 5+ starts each.
 
+**Why so dominant?** For any driver's peak (or a single season), the app shows a verdict, a driver-vs-car split, and five factor cards:
+- **Car:** rank on the grid, plus the teammate's championship finish as a model-free clue.
+- **Driver:** skill rank and teammate head-to-head.
+- **Competition:** the closest rival's driver + car package.
+- **Reliability:** own car failures vs the top rivals'.
+- **New rules:** major rule changes from `data/regulations.csv`, plus the team's car improvement that year.
+
+Labels are compared against title-winning seasons, so they mean the same thing in every era.
+
 **Track predictor:** recent driver form, car form, reliability, teammate edge, and how the driver does on this *track type* and *circuit* compared with their usual form. Track types (street / high-speed / mixed / technical) come from an era-adjusted pole speed. Edit `data/circuits.csv` to override any label.
 
 ## Backtest (2014–2026, 269 races, each season predicted from earlier seasons only)
