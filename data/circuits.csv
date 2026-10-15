@@ -1,0 +1,79 @@
+circuit_id,name,f1db_type,speed_index,races_used,track_type
+adelaide,Adelaide,STREET,0.862,11,street
+aida,Aida,RACE,0.9348,2,technical
+ain-diab,Ain-Diab,ROAD,1.1232,1,high-speed
+aintree,Aintree,ROAD,0.9376,5,technical
+anderstorp,Anderstorp Raceway,RACE,0.8885,6,technical
+austin,Americas,RACE,,0,mixed
+avus,AVUS,ROAD,1.4904,1,high-speed
+bahrain,Bahrain,RACE,0.7555,2,technical
+baku,Baku,STREET,,0,street
+brands-hatch,Brands Hatch,RACE,1.0018,14,mixed
+bremgarten,Bremgarten,ROAD,1.0,5,mixed
+buddh,Buddh,RACE,,0,mixed
+buenos-aires,Juan y Oscar Gálvez,RACE,0.8921,20,technical
+bugatti,Bugatti,RACE,0.9572,1,technical
+caesars-palace,Caesars Palace,STREET,0.8594,2,street
+catalunya,Catalunya,RACE,1.0247,15,high-speed
+clermont-ferrand,Charade,ROAD,0.8773,4,technical
+dallas,Fair Park,STREET,0.702,1,street
+detroit,Detroit,STREET,0.6957,7,street
+dijon,Dijon-Prenois,RACE,1.0528,6,high-speed
+donington,Donington Park,RACE,0.9723,1,mixed
+east-london,Prince George,RACE,0.9684,3,technical
+estoril,Estoril,RACE,0.9887,13,mixed
+fuji,Fuji,RACE,1.1279,2,high-speed
+hockenheimring,Hockenheimring,RACE,1.1449,29,high-speed
+hungaroring,Hungaroring,RACE,0.8928,20,technical
+imola,Enzo e Dino Ferrari,RACE,1.0,26,mixed
+indianapolis,Indianapolis,RACE,0.3818,17,technical
+interlagos,José Carlos Pace,RACE,0.9814,23,mixed
+istanbul,İstanbul Park,RACE,1.0614,1,high-speed
+jacarepagua,Nelson Piquet,RACE,0.9942,10,mixed
+jarama,Jarama,RACE,0.8077,9,technical
+jeddah,Jeddah,STREET,,0,street
+jerez,Jerez,RACE,0.9185,7,technical
+kyalami,Kyalami,RACE,1.006,20,mixed
+las-vegas,Las Vegas,STREET,,0,street
+long-beach,Long Beach,STREET,0.7369,8,street
+lusail,Lusail,RACE,,0,mixed
+madring,Madring,STREET,,0,street
+magny-cours,Magny-Cours,RACE,0.9827,15,mixed
+marina-bay,Marina Bay,STREET,,0,street
+melbourne,Albert Park,STREET,1.0126,10,street
+mexico-city,Hermanos Rodríguez,RACE,0.9681,15,technical
+miami,Miami,STREET,,0,street
+monaco,Monaco,STREET,0.7115,52,street
+monsanto,Monsanto,STREET,1.0,1,street
+mont-tremblant,Mont-Tremblant,RACE,0.9135,2,technical
+montjuic,Montjuïc,STREET,0.8575,4,street
+montreal,Gilles Villeneuve,STREET,0.9472,27,street
+monza,Monza,RACE,1.2052,55,high-speed
+mosport,Mosport,RACE,1.0047,8,mixed
+mugello,Mugello,RACE,,0,mixed
+nivelles,Nivelles-Baulers,RACE,0.9895,2,mixed
+nurburgring,Nürburgring,RACE,0.9861,35,mixed
+paul-ricard,Paul Ricard,RACE,1.0105,14,mixed
+pedralbes,Pedralbes,STREET,1.0098,2,street
+pescara,Pescara,ROAD,1.0871,1,high-speed
+phoenix,Phoenix,STREET,0.7373,3,street
+portimao,Portimão,RACE,,0,mixed
+porto,Boavista,STREET,1.0373,2,street
+reims,Reims-Gueux,ROAD,1.2362,11,high-speed
+riverside,Riverside,RACE,0.9612,1,technical
+rouen,Rouen-Les-Essarts,ROAD,1.1022,5,high-speed
+sebring,Sebring,ROAD,1.0492,1,high-speed
+sepang,Sepang,RACE,0.9624,7,technical
+shanghai,Shanghai,RACE,0.9817,2,mixed
+silverstone,Silverstone,RACE,1.0946,39,high-speed
+sirius,Sirius,ROAD,,0,mixed
+spa-francorchamps,Spa-Francorchamps,RACE,1.1114,39,high-speed
+spielberg,Red Bull Ring,RACE,1.151,25,high-speed
+suzuka,Suzuka,RACE,1.045,19,high-speed
+valencia,Valencia,STREET,,0,street
+watkins-glen,Watkins Glen,RACE,1.0427,20,high-speed
+yas-marina,Yas Marina,RACE,,0,mixed
+yeongam,Korea,RACE,,0,mixed
+zandvoort,Zandvoort,RACE,1.0,30,mixed
+zeltweg,Zeltweg,ROAD,0.9961,1,mixed
+zolder,Zolder,RACE,0.9562,10,technical
