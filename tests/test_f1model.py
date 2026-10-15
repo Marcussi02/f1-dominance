@@ -217,3 +217,14 @@ def test_describe_labels():
 
     window = describe(summarise_window(f.loc[f["driver_id"] == "a"]), THR)
     assert window["cards"]["Car"][0] == "Best car by a big margin"  # best car in both seasons
+
+
+def test_dashboard_and_pipeline_agree_on_data_version():
+    """The app rebuilds when data_version differs, so both constants must move together."""
+    import re
+    from pathlib import Path
+
+    from f1model.pipeline import DATA_VERSION
+
+    app = (Path(__file__).resolve().parents[1] / "app" / "dashboard.py").read_text()
+    assert int(re.search(r"^DATA_VERSION = (\d+)", app, re.M).group(1)) == DATA_VERSION

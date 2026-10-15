@@ -34,9 +34,11 @@ def load_regulations(path: Path) -> pd.DataFrame:
     return pd.read_csv(path) if path.exists() else pd.DataFrame(columns=["year", "kind", "change"])
 
 
-def _mode(s: pd.Series) -> object:
-    m = s.dropna().mode()
-    return m.iat[0] if len(m) else np.nan
+def _mode_by(df: pd.DataFrame, keys: list[str], col: str) -> pd.Series:
+    """Most common non-missing value of `col` per group; ties go to the smallest value (like Series.mode)."""
+    counts = df.groupby(keys + [col]).size().rename("n").reset_index()
+    counts = counts.sort_values(keys + ["n", col], ascending=[True] * len(keys) + [False, True], kind="stable")
+    return counts.drop_duplicates(keys).set_index(keys)[col]
 
 
 def driver_share(driver_edge: pd.Series, car_edge: pd.Series) -> pd.Series:
@@ -58,60 +60,79 @@ def season_factors(entries: pd.DataFrame, seasons: pd.DataFrame, cars: pd.DataFr
         s[out] = s[col] - s["year"].map(avg)
     s["driver_share"] = driver_share(s["driver_edge"], s["car_edge"])
 
+    # Everything below works season by season on plain dicts and sorted arrays:
+    # filtering whole DataFrames once per driver-season took ~15 s.
+    keys = list(zip(s["driver_id"], s["year"]))
+    own_ts = entries.groupby(["driver_id", "year"])["team_season"].agg(set).to_dict()
+
     # Car rank and gap to the best car the driver did not drive.
     car_by_ts = cars.set_index("team_season")["car"]
     ts_year = entries.drop_duplicates("team_season").set_index("team_season")["year"]
     grid_cars = pd.DataFrame({"car": car_by_ts.reindex(ts_year.index), "year": ts_year}).dropna()
-    own_ts = entries.groupby(["driver_id", "year"])["team_season"].agg(set)
+    cars_by_year = {
+        y: (np.sort(g["car"].to_numpy()), list(g["car"].sort_values(ascending=False).items()))
+        for y, g in grid_cars.groupby("year")
+    }
     ranks, gaps = [], []
-    for d, y, own in zip(s["driver_id"], s["year"], s["car"]):
-        yr = grid_cars.loc[grid_cars["year"] == y, "car"]
-        ranks.append(1 + int((yr > own + 1e-9).sum()))
-        others = yr.drop(list(own_ts.get((d, y), set())), errors="ignore")
-        gaps.append(own - others.max() if len(others) else np.nan)
+    for (d, y), own in zip(keys, s["car"]):
+        sorted_cars, desc = cars_by_year.get(y, (np.array([]), []))
+        ranks.append(1 + len(sorted_cars) - int(np.searchsorted(sorted_cars, own + 1e-9, side="right")))
+        mine = own_ts.get((d, y), set())
+        best_other = next((c for ts, c in desc if ts not in mine), np.nan)
+        gaps.append(own - best_other)
     s["car_rank"], s["car_gap"] = ranks, gaps
 
     # Skill rank and rival among regular drivers that season.
     regular = s.loc[s["starts"] >= MIN_STARTS]
-    s["skill_rank"] = s.apply(
-        lambda r: 1 + int((regular.loc[regular["year"] == r["year"], "rating"] > r["rating"] + 1e-9).sum()), axis=1
-    )
+    ratings_by_year = {y: np.sort(g.to_numpy()) for y, g in regular.groupby("year")["rating"]}
+    s["skill_rank"] = [
+        1 + len(r) - int(np.searchsorted(r, v + 1e-9, side="right"))
+        for r, v in ((ratings_by_year.get(y, np.array([])), v) for y, v in zip(s["year"], s["rating"]))
+    ]
 
-    fails = (entries["status"] == "car").groupby([entries["driver_id"], entries["year"]]).mean()
-    s["own_fail"] = [fails.get((d, y), np.nan) for d, y in zip(s["driver_id"], s["year"])]
+    fails = (entries["status"] == "car").groupby([entries["driver_id"], entries["year"]]).mean().to_dict()
+    s["own_fail"] = [fails.get(k, np.nan) for k in keys]
+    # Regulars by package, best first; stable sort keeps nlargest's tie order.
+    packages_by_year = {
+        y: list(zip(g["driver_id"], g["package"]))
+        for y, g in regular.sort_values("package", ascending=False, kind="stable").groupby("year")
+    }
     rival_rows = []
-    for d, y in zip(s["driver_id"], s["year"]):
-        others = regular.loc[(regular["year"] == y) & (regular["driver_id"] != d)].nlargest(TOP_RIVALS, "package")
-        if others.empty:
+    for d, y in keys:
+        others = [(r, p) for r, p in packages_by_year.get(y, []) if r != d][:TOP_RIVALS]
+        if not others:
             rival_rows.append((np.nan, np.nan, np.nan, False))
             continue
-        top = others.iloc[0]
-        same_car = bool(own_ts.get((d, y), set()) & own_ts.get((top["driver_id"], y), set()))
-        rivals_fail = np.nanmean([fails.get((r, y), np.nan) for r in others["driver_id"]])
-        rival_rows.append((top["driver_id"], top["package"], rivals_fail, same_car))
+        top_id, top_package = others[0]
+        same_car = bool(own_ts.get((d, y), set()) & own_ts.get((top_id, y), set()))
+        rivals_fail = np.nanmean([fails.get((r, y), np.nan) for r, _ in others])
+        rival_rows.append((top_id, top_package, rivals_fail, same_car))
     s[["rival_id", "rival_package", "rivals_fail", "rival_same_car"]] = pd.DataFrame(rival_rows, index=s.index)
     s["package_gap"] = s["package"] - s["rival_package"].astype(float)
 
     # Model-free car clue: where the best regular teammate finished in the championship.
-    rank_of = s.set_index(["driver_id", "year"])["champ_rank"]
-    starts_of = s.set_index(["driver_id", "year"])["starts"]
-    ts_drivers = entries.groupby("team_season")["driver_id"].agg(set)
+    rank_of = dict(zip(keys, s["champ_rank"]))
+    starts_of = dict(zip(keys, s["starts"]))
+    ts_drivers = entries.groupby("team_season")["driver_id"].agg(set).to_dict()
     tm_rows = []
-    for d, y in zip(s["driver_id"], s["year"]):
+    for d, y in keys:
         mates = set().union(*(ts_drivers[t] for t in own_ts.get((d, y), set()))) - {d}
         mates = [m for m in mates if starts_of.get((m, y), 0) >= MIN_STARTS]
-        best = min(mates, key=lambda m: rank_of[(m, y)], default=None)
+        best = min(mates, key=lambda m: (rank_of[(m, y)], m), default=None)  # ties: alphabetical, so runs repeat
         tm_rows.append((best, rank_of[(best, y)] if best else np.nan))
     s[["teammate_id", "teammate_rank"]] = pd.DataFrame(tm_rows, index=s.index)
 
     # Main team, its car jump over the year before, engine and tyre supplier.
-    main = entries.groupby(["driver_id", "year"]).agg(
-        main_team=("team_id", _mode), engine_id=("engine_id", _mode), tyre_id=("tyre_id", _mode)
+    main = pd.concat(
+        [_mode_by(entries, ["driver_id", "year"], col).rename(out)
+         for col, out in (("team_id", "main_team"), ("engine_id", "engine_id"), ("tyre_id", "tyre_id"))],
+        axis=1,
     )
     s = s.merge(main, left_on=["driver_id", "year"], right_index=True, how="left")
     team_car = (
         entries.assign(car=entries["team_season"].map(car_by_ts))
         .groupby(["team_id", "year"])["car"].mean()
+        .to_dict()
     )
     s["car_jump"] = [
         team_car.get((t, y), np.nan) - team_car.get((t, y - 1), np.nan) for t, y in zip(s["main_team"], s["year"])

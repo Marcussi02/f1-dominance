@@ -1,0 +1,58 @@
+# Rebuilds the model and commits the finished data (data/out/) so the hosted app
+# starts instantly with up-to-date results instead of rebuilding on every cold start.
+name: Update data
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC, after race weekends
+  workflow_dispatch: # "Run workflow" button on GitHub
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "data/*.csv"
+      - "requirements.txt"
+      - "pyproject.toml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt pytest
+          pip install -e . --no-deps
+
+      - name: Test
+        run: pytest -q
+
+      - name: Build model with latest F1 data
+        run: python -m f1model.pipeline --refresh
+
+      - name: Commit data if it changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/out
+          if git diff --cached --quiet; then
+            echo "No data changes."
+            exit 0
+          fi
+          git commit -m "Update model data ($(date -u +%F))"
+          git pull --rebase origin main
+          git push origin HEAD:main

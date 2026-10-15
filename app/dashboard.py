@@ -23,6 +23,9 @@ from f1model.metrics.explain import describe, summarise_window  # noqa: E402
 
 OUT = DATA_DIR / "out"
 REQUIRED = ("seasons", "peaks", "predictions", "track_strengths", "explain")
+# Must match pipeline.DATA_VERSION (a test checks this). Bump both when output files change shape,
+# so a server holding older data rebuilds instead of crashing on missing columns.
+DATA_VERSION = 2
 BLUE, ORANGE, RED = "#2a78d6", "#eb6834", "#e34948"
 GRID, MUTED = "rgba(137,135,129,0.25)", "#898781"
 COMPONENTS = {
@@ -35,8 +38,14 @@ COMPONENTS = {
 st.set_page_config(page_title="F1 Peak Dominance", page_icon="🏁", layout="wide")
 
 
-@st.cache_data
-def load():
+def data_stamp() -> int:
+    """Changes whenever the pipeline writes new outputs (meta.json is written last)."""
+    return (OUT / "meta.json").stat().st_mtime_ns
+
+
+@st.cache_data(max_entries=2)
+def load(stamp: int):
+    """Read all outputs; `stamp` makes new data (e.g. from the weekly GitHub update) replace the cache."""
     data = {n: pd.read_parquet(OUT / f"{n}.parquet") for n in REQUIRED}
     bt = OUT / "backtest.parquet"
     data["backtest"] = pd.read_parquet(bt) if bt.exists() else None
@@ -76,7 +85,12 @@ def rebuild(refresh: bool = False) -> None:
 
 
 def outputs_ready() -> bool:
-    return all((OUT / f"{n}.parquet").exists() for n in REQUIRED)
+    if not all((OUT / f"{n}.parquet").exists() for n in REQUIRED):
+        return False
+    try:
+        return json.loads((OUT / "meta.json").read_text()).get("data_version") == DATA_VERSION
+    except (OSError, ValueError):
+        return False
 
 
 @st.cache_resource
@@ -96,19 +110,44 @@ if not outputs_ready():
         st.error("The model build did not finish. Please reboot the app (Manage app → ⋮ → Reboot app).")
         st.stop()
 
-data = load()
+data = load(data_stamp())
 
 seasons, peaks, preds, strengths = data["seasons"], data["peaks"], data["predictions"], data["track_strengths"]
 st.sidebar.title("🏁 F1 Peak Dominance")
 explain = data["explain"]
 thr = data["meta"]["explain_thresholds"]
-PAGES = ["All-time peak ranking", "Driver career", "Why so dominant?", "Head-to-head", "Track predictor"]
+
+# Shareable links: the page and driver live in the URL, e.g. ?page=why&driver=Fernando+Alonso
+SLUGS = {
+    "All-time peak ranking": "ranking", "Driver career": "career", "Why so dominant?": "why",
+    "Head-to-head": "h2h", "Track predictor": "predictor",
+}
+PAGES = list(SLUGS)
+URL_PARAMS = {"career": ("driver",), "why": ("driver",), "h2h": ("a", "b")}
+if "page" not in st.session_state:
+    st.session_state["page"] = {v: k for k, v in SLUGS.items()}.get(st.query_params.get("page"), PAGES[0])
 page = st.sidebar.radio("Page", PAGES, key="page")
+st.query_params["page"] = SLUGS[page]
+for param in ("driver", "a", "b"):
+    if param not in URL_PARAMS.get(SLUGS[page], ()) and param in st.query_params:
+        del st.query_params[param]
+
+
+def driver_picker(where, label: str, names: list[str], key: str, param: str = "driver", default: int = 0) -> str:
+    """Driver selectbox that starts from the URL (if valid) and writes its choice back to the URL."""
+    if key not in st.session_state:
+        wanted = st.query_params.get(param)
+        st.session_state[key] = wanted if wanted in names else names[min(default, len(names) - 1)]
+    choice = where.selectbox(label, names, key=key)
+    st.query_params[param] = choice
+    return choice
 
 
 def why(driver_id: str, start: int, end: int) -> dict:
     rows = explain.loc[(explain["driver_id"] == driver_id) & explain["year"].between(start, end)]
     return describe(summarise_window(rows), thr)
+
+
 st.sidebar.caption(f"Data: F1DB, 1950 – {data['meta']['last_race']}  \n{data['meta']['starts']:,} race starts")
 if st.sidebar.button("Update to latest results"):
     with st.spinner("Downloading latest F1 results and rebuilding..."):
@@ -150,12 +189,12 @@ if page == "All-time peak ranking":
     ))
     fig.update_yaxes(autorange="reversed")
     fig.update_xaxes(title="Peak Dominance Index")
-    st.plotly_chart(style(fig, height=max(320, 26 * len(p))), use_container_width=True)
+    st.plotly_chart(style(fig, height=max(320, 26 * len(p))), width="stretch")
 
     st.dataframe(
         p[["rank", "driver", "window", "peak_score", "peak_rating", "peak_wins", "peak_poles", "peak_titles",
            "peak_h2h", "peak_car", "peak_teams", "peak_starts"]],
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
         column_config={
             "rank": "#", "driver": "Driver", "window": "Peak",
             "peak_score": st.column_config.NumberColumn("Dominance", format="%.2f"),
@@ -172,7 +211,7 @@ if page == "All-time peak ranking":
 # ------------------------------------------------------------------- career
 elif page == "Driver career":
     names = peaks.sort_values("peak_score", ascending=False)["driver"].tolist()
-    driver = st.selectbox("Driver", names, index=0)
+    driver = driver_picker(st, "Driver", names, key="driver_career")
     d = seasons.loc[seasons["driver"] == driver].sort_values("year")
     pk = peaks.loc[peaks["driver"] == driver].iloc[0]
     st.header(driver)
@@ -198,7 +237,7 @@ elif page == "Driver career":
                       "<br>Championship (re-scored): P%{customdata[3]}<extra></extra>",
     ))
     fig.add_hline(y=0, line_color=MUTED, line_width=1)
-    st.plotly_chart(style(fig, 340), use_container_width=True)
+    st.plotly_chart(style(fig, 340), width="stretch")
 
     st.subheader("Driver skill vs car strength")
     st.caption("Both in the same units: share of the field gained over an average driver / average car.")
@@ -210,12 +249,12 @@ elif page == "Driver career":
                              line=dict(color=ORANGE, width=2), marker=dict(size=8, symbol="square"),
                              hovertemplate="%{x}: car %{y:+.3f}<extra></extra>"))
     fig.add_hline(y=0, line_color=MUTED, line_width=1)
-    st.plotly_chart(style(fig, 320), use_container_width=True)
+    st.plotly_chart(style(fig, 320), width="stretch")
 
     st.dataframe(
         d[["year", "teams", "starts", "wins", "podiums", "poles", "points_share", "h2h", "tm_quali_gap",
            "rating", "car", "dominance"]].sort_values("year", ascending=False),
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
         column_config={
             "points_share": st.column_config.NumberColumn("Points share", format="percent"),
             "h2h": st.column_config.NumberColumn("Teammate H2H", format="percent"),
@@ -233,7 +272,7 @@ elif page == "Why so dominant?":
     st.caption("Breaks a driver's results into car, driver, competition, reliability and rule changes.")
     names = peaks.sort_values("peak_score", ascending=False)["driver"].tolist()
     c1, c2 = st.columns([2, 1])
-    driver = c1.selectbox("Driver", names, index=0)
+    driver = driver_picker(c1, "Driver", names, key="driver_why")
     pk = peaks.loc[peaks["driver"] == driver].iloc[0]
     years = sorted(explain.loc[explain["driver_id"] == pk.driver_id, "year"].unique(), reverse=True)
     peak_label = f"Peak ({pk.peak_start}–{pk.peak_end})"
@@ -257,7 +296,7 @@ elif page == "Why so dominant?":
         fig.update_layout(barmode="stack", showlegend=False)
         fig.update_xaxes(range=[0, 1], tickformat=".0%", showgrid=False)
         fig.update_yaxes(visible=False)
-        st.plotly_chart(style(fig, 120), use_container_width=True)
+        st.plotly_chart(style(fig, 120), width="stretch")
         st.caption(f"Driver edge {f['driver_edge']:+.2f} and car edge {f['car_edge']:+.2f} over the average "
                    "driver and car that season (model estimate).")
     else:
@@ -286,8 +325,8 @@ elif page == "Head-to-head":
     st.header("Compare two peaks")
     names = peaks.sort_values("peak_score", ascending=False)["driver"].tolist()
     c1, c2 = st.columns(2)
-    a = c1.selectbox("Driver A", names, index=0)
-    b = c2.selectbox("Driver B", names, index=min(1, len(names) - 1))
+    a = driver_picker(c1, "Driver A", names, key="h2h_a", param="a")
+    b = driver_picker(c2, "Driver B", names, key="h2h_b", param="b", default=1)
 
     def peak_profile(name):
         pk = peaks.loc[peaks["driver"] == name].iloc[0]
@@ -305,7 +344,7 @@ elif page == "Head-to-head":
             marker=dict(color=color, cornerradius=4), hovertemplate="%{x}: %{y:+.2f} σ<extra>" + name + "</extra>",
         ))
     fig.update_yaxes(title="Standard deviations above era average")
-    st.plotly_chart(style(fig, 380), use_container_width=True)
+    st.plotly_chart(style(fig, 380), width="stretch")
 
     def row(pk, s):
         return {
@@ -316,7 +355,7 @@ elif page == "Head-to-head":
             "Teammate H2H": pct(pk.peak_h2h), "Teams": pk.peak_teams,
         }
 
-    st.dataframe(pd.DataFrame({a: row(pa, sa), b: row(pb, sb)}).astype(str), use_container_width=True)
+    st.dataframe(pd.DataFrame({a: row(pa, sa), b: row(pb, sb)}).astype(str), width="stretch")
 
 # ---------------------------------------------------------------- predictor
 else:
@@ -338,7 +377,7 @@ else:
         st.subheader("Predicted order")
         st.dataframe(
             r[["pred_rank", "driver", "team", "p_win", "p_podium", "type_adj", "circuit_adj"]],
-            hide_index=True, use_container_width=True, height=36 * len(r) + 40,
+            hide_index=True, width="stretch", height=36 * len(r) + 40,
             column_config={
                 "pred_rank": "#", "driver": "Driver", "team": "Team",
                 "p_win": st.column_config.ProgressColumn("Win chance", format="percent", min_value=0, max_value=1),
@@ -358,7 +397,7 @@ else:
             hovertemplate="%{y}: %{x:+.3f}<extra></extra>",
         ))
         fig.update_xaxes(title="vs own usual form (field share)")
-        st.plotly_chart(style(fig, 36 * len(s) + 60), use_container_width=True)
+        st.plotly_chart(style(fig, 36 * len(s) + 60), width="stretch")
 
     if data["backtest"] is not None:
         with st.expander("How accurate is this? (backtest)"):
@@ -366,7 +405,7 @@ else:
             summary = bt.groupby("model").agg(races=("race_id", "nunique"), spearman=("spearman", "mean"),
                                                mae=("mae", "mean"), winner_hit=("winner_hit", "mean"))
             st.dataframe(
-                summary.sort_values("spearman", ascending=False), use_container_width=True,
+                summary.sort_values("spearman", ascending=False), width="stretch",
                 column_config={
                     "spearman": st.column_config.NumberColumn("Rank accuracy", format="%.3f",
                         help="Spearman correlation of predicted vs actual order (1 = perfect)"),

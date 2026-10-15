@@ -32,6 +32,22 @@ pytest                                 # unit tests
 
 You get a link like `https://<name>.streamlit.app`. Every push to `main` redeploys it automatically.
 
+### Automatic data updates
+A GitHub Action (`.github/workflows/update-data.yml`) rebuilds the model and commits the finished data in `data/out/`:
+- every Monday morning (after race weekends)
+- whenever the model code changes
+- on demand: **Actions → Update data → Run workflow**
+
+Because the data is pre-built, the site opens in a few seconds instead of rebuilding on every cold start.
+
+### Shareable links
+The page and driver are in the address, so you can share exactly what you're looking at:
+- `?page=why&driver=Fernando+Alonso`
+- `?page=h2h&a=Jim+Clark&b=Lewis+Hamilton`
+- `?page=career&driver=Ayrton+Senna`
+
+Other pages: `ranking`, `predictor`.
+
 ## How it works
 
 **Data:** [F1DB](https://github.com/f1db/f1db), every championship race from 1950 to now. The Indy 500 and shared drives are left out.

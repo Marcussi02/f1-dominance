@@ -25,6 +25,8 @@ OUT_DIR = DATA_DIR / "out"
 CIRCUITS_CSV = DATA_DIR / "circuits.csv"
 REGULATIONS_CSV = DATA_DIR / "regulations.csv"
 BACKTEST_YEARS = list(range(2014, 2027))
+# Bump (together with DATA_VERSION in app/dashboard.py) whenever output files change shape.
+DATA_VERSION = 2
 
 
 def circuit_types(races: pd.DataFrame) -> pd.DataFrame:
@@ -164,7 +166,7 @@ def run(refresh: bool = False, with_backtest: bool = True) -> None:
     # 3. Backtest
     meta = {
         "last_race": str(entries["date"].max()), "starts": len(entries), "backtest_years": BACKTEST_YEARS,
-        "explain_thresholds": explain_thresholds,
+        "explain_thresholds": explain_thresholds, "data_version": DATA_VERSION,
     }
     if with_backtest:
         per_race = backtest(feats, BACKTEST_YEARS)

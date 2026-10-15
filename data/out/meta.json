@@ -1,0 +1,55 @@
+{
+  "last_race": "2026-10-11",
+  "starts": 25395,
+  "backtest_years": [
+    2014,
+    2015,
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023,
+    2024,
+    2025,
+    2026
+  ],
+  "explain_thresholds": {
+    "car_big": 0.04652472839541205,
+    "rival_easy": 0.04113356246603983,
+    "rival_tough": -0.006933440428955162
+  },
+  "data_version": 2,
+  "backtest": [
+    {
+      "model": "model (after qualifying)",
+      "races": 269,
+      "spearman": 0.662,
+      "mae": 3.378,
+      "winner_hit": 0.55
+    },
+    {
+      "model": "baseline: grid order",
+      "races": 269,
+      "spearman": 0.641,
+      "mae": 3.465,
+      "winner_hit": 0.558
+    },
+    {
+      "model": "baseline: recent form",
+      "races": 269,
+      "spearman": 0.618,
+      "mae": 3.712,
+      "winner_hit": 0.428
+    },
+    {
+      "model": "model (before qualifying)",
+      "races": 269,
+      "spearman": 0.617,
+      "mae": 3.686,
+      "winner_hit": 0.446
+    }
+  ]
+}
