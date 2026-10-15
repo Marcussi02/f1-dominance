@@ -17,9 +17,9 @@
     2026
   ],
   "explain_thresholds": {
-    "car_big": 0.04652472839541205,
-    "rival_easy": 0.04113356246603983,
-    "rival_tough": -0.006933440428955162
+    "car_big": 0.046524877316248076,
+    "rival_easy": 0.04113359770618735,
+    "rival_tough": -0.006933141562076139
   },
   "data_version": 2,
   "backtest": [
