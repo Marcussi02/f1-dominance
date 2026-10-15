@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 
 import pandas as pd
@@ -17,7 +18,6 @@ import streamlit as st
 # Lets the app run on hosts that don't pip-install the package (e.g. Streamlit Community Cloud).
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from f1model import pipeline  # noqa: E402
 from f1model.data.fetch import DATA_DIR  # noqa: E402
 from f1model.metrics.explain import describe, summarise_window  # noqa: E402
 
@@ -61,11 +61,40 @@ def pct(x: float) -> str:
     return "–" if pd.isna(x) else f"{x:.0%}"
 
 
-if not all((OUT / f"{n}.parquet").exists() for n in REQUIRED):
-    # Fresh install, new server, or an app update that added outputs: build everything once.
-    with st.spinner("First start: downloading F1 data and building the model (about 30 seconds)..."):
-        pipeline.run()
+def rebuild(refresh: bool = False) -> None:
+    """Run the pipeline with freshly imported code.
+
+    After a new version is deployed, Streamlit re-runs this script but keeps
+    already-imported f1model modules in memory, so an old pipeline could run.
+    """
+    for name in [m for m in sys.modules if m == "f1model" or m.startswith("f1model.")]:
+        del sys.modules[name]
+    from f1model import pipeline as fresh
+
+    fresh.run(refresh=refresh)
     load.clear()
+
+
+def outputs_ready() -> bool:
+    return all((OUT / f"{n}.parquet").exists() for n in REQUIRED)
+
+
+@st.cache_resource
+def build_lock() -> threading.Lock:
+    """One lock per server, so visitors arriving during a build wait instead of starting another."""
+    return threading.Lock()
+
+
+if not outputs_ready():
+    # Fresh install, new server, or an app update that added outputs: build everything once.
+    with st.spinner("Building the model with the latest code and data (about 30 seconds)..."):
+        with build_lock():
+            if not outputs_ready():
+                rebuild()
+        load.clear()
+    if not outputs_ready():
+        st.error("The model build did not finish. Please reboot the app (Manage app → ⋮ → Reboot app).")
+        st.stop()
 
 data = load()
 
@@ -83,8 +112,8 @@ def why(driver_id: str, start: int, end: int) -> dict:
 st.sidebar.caption(f"Data: F1DB, 1950 – {data['meta']['last_race']}  \n{data['meta']['starts']:,} race starts")
 if st.sidebar.button("Update to latest results"):
     with st.spinner("Downloading latest F1 results and rebuilding..."):
-        pipeline.run(refresh=True)
-    load.clear()
+        with build_lock():
+            rebuild(refresh=True)
     st.rerun()
 with st.sidebar.expander("How the score works"):
     st.markdown(
