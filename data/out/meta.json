@@ -1,6 +1,6 @@
 {
-  "last_race": "2026-10-11",
-  "starts": 25395,
+  "last_race": "2026-10-25",
+  "starts": 25417,
   "backtest_years": [
     2014,
     2015,
@@ -17,39 +17,39 @@
     2026
   ],
   "explain_thresholds": {
-    "car_big": 0.046524877316248076,
-    "rival_easy": 0.04113359770618735,
-    "rival_tough": -0.006933141562076139
+    "car_big": 0.04650744898911713,
+    "rival_easy": 0.041105744814725176,
+    "rival_tough": -0.006977073536028833
   },
   "data_version": 2,
   "backtest": [
     {
       "model": "model (after qualifying)",
-      "races": 269,
-      "spearman": 0.662,
-      "mae": 3.378,
-      "winner_hit": 0.55
+      "races": 270,
+      "spearman": 0.663,
+      "mae": 3.371,
+      "winner_hit": 0.552
     },
     {
       "model": "baseline: grid order",
-      "races": 269,
-      "spearman": 0.641,
-      "mae": 3.465,
-      "winner_hit": 0.558
+      "races": 270,
+      "spearman": 0.642,
+      "mae": 3.46,
+      "winner_hit": 0.559
     },
     {
       "model": "baseline: recent form",
-      "races": 269,
-      "spearman": 0.618,
-      "mae": 3.712,
-      "winner_hit": 0.428
+      "races": 270,
+      "spearman": 0.619,
+      "mae": 3.706,
+      "winner_hit": 0.426
     },
     {
       "model": "model (before qualifying)",
-      "races": 269,
-      "spearman": 0.617,
-      "mae": 3.686,
-      "winner_hit": 0.446
+      "races": 270,
+      "spearman": 0.618,
+      "mae": 3.679,
+      "winner_hit": 0.444
     }
   ]
 }
